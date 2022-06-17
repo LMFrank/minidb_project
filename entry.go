@@ -42,3 +42,11 @@ func (e *Entry) Encode() ([]byte, error) {
 	copy(buf[entryHeaderSize+e.KeySize:], e.Value)
 	return buf, nil
 }
+
+// Decode 解码 buf 字节数组，返回 Entry
+func Decode(buf []byte) (*Entry, error) {
+	ks := binary.BigEndian.Uint32(buf[0:4])
+	vs := binary.BigEndian.Uint32(buf[4:8])
+	mark := binary.BigEndian.Uint16(buf[8:10])
+	return &Entry{KeySize: ks, ValueSize: vs, Mark: mark}, nil
+}
