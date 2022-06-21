@@ -11,7 +11,7 @@ const (
 
 // Entry 写入文件的记录
 type Entry struct {
-	key       []byte
+	Key       []byte
 	Value     []byte
 	KeySize   uint32
 	ValueSize uint32
@@ -20,7 +20,7 @@ type Entry struct {
 
 func NewEntry(key, value []byte, mark uint16) *Entry {
 	return &Entry{
-		key:       key,
+		Key:       key,
 		Value:     value,
 		KeySize:   uint32(len(key)),
 		ValueSize: uint32(len(value)),
@@ -38,7 +38,7 @@ func (e *Entry) Encode() ([]byte, error) {
 	binary.BigEndian.PutUint32(buf[0:4], e.KeySize)
 	binary.BigEndian.PutUint32(buf[4:8], e.ValueSize)
 	binary.BigEndian.PutUint16(buf[8:10], e.Mark)
-	copy(buf[entryHeaderSize:entryHeaderSize+e.KeySize], e.key)
+	copy(buf[entryHeaderSize:entryHeaderSize+e.KeySize], e.Key)
 	copy(buf[entryHeaderSize+e.KeySize:], e.Value)
 	return buf, nil
 }

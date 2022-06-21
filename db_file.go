@@ -54,7 +54,7 @@ func (df *DBFile) Read(offset int64) (e *Entry, err error) {
 		if _, err = df.File.ReadAt(key, offset); err != nil {
 			return
 		}
-		e.key = key
+		e.Key = key
 	}
 
 	offset += int64(e.KeySize)

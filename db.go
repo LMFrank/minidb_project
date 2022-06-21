@@ -56,14 +56,80 @@ func (db *MiniDB) loadIndexesFromFile() {
 		}
 
 		// 设置索引状态
-		db.indexes[string(e.key)] = offset
+		db.indexes[string(e.Key)] = offset
 
 		if e.Mark == DEL {
-			delete(db.indexes, string(e.key))
+			delete(db.indexes, string(e.Key))
 		}
 
 		offset += e.GetSize()
 	}
 
 	return
+}
+
+func (db *MiniDB) Merge() error {
+	if db.dbFile.Offset == 0 {
+		return nil
+	}
+
+	var (
+		validEntries []*Entry
+		offset       int64
+	)
+
+	for {
+		e, err := db.dbFile.Read(offset)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		// 内存中的索引状态是最新的，直接对比过滤出有效的 Entry
+		if off, ok := db.indexes[string(e.Key)]; ok && off == offset {
+			validEntries = append(validEntries, e)
+		}
+		offset += e.GetSize()
+
+		if len(validEntries) > 0 {
+			// 新建临时文件
+			mergeDBFile, err := NewMergeDBFile(db.dirPath)
+			if err != nil {
+				return err
+			}
+			defer os.Remove(mergeDBFile.File.Name())
+
+			// 重新写入有效的 entry
+			for _, entry := range validEntries {
+				writeOff := mergeDBFile.Offset
+				err := mergeDBFile.Write(entry)
+				if err != nil {
+					return err
+				}
+
+				// 更新索引
+				db.indexes[string(entry.Key)] = writeOff
+			}
+
+			// 获取文件名
+			dbFileName := db.dbFile.File.Name()
+			// 关闭文件
+			db.dbFile.File.Close()
+			// 删除旧的数据文件
+			os.Remove(dbFileName)
+
+			// 获取文件名
+			mergeDBFileName := mergeDBFile.File.Name()
+			// 关闭文件
+			mergeDBFile.File.Close()
+			// 临时文件变更为新的数据文件
+			os.Rename(mergeDBFileName, db.dirPath+string(os.PathSeparator)+FileName)
+
+			db.dbFile = mergeDBFile
+		}
+	}
+
+	return nil
 }
