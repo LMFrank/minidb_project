@@ -92,44 +92,110 @@ func (db *MiniDB) Merge() error {
 			validEntries = append(validEntries, e)
 		}
 		offset += e.GetSize()
+	}
 
-		if len(validEntries) > 0 {
-			// 新建临时文件
-			mergeDBFile, err := NewMergeDBFile(db.dirPath)
+	if len(validEntries) > 0 {
+		// 新建临时文件
+		mergeDBFile, err := NewMergeDBFile(db.dirPath)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(mergeDBFile.File.Name())
+
+		// 重新写入有效的 entry
+		for _, entry := range validEntries {
+			writeOff := mergeDBFile.Offset
+			err := mergeDBFile.Write(entry)
 			if err != nil {
 				return err
 			}
-			defer os.Remove(mergeDBFile.File.Name())
 
-			// 重新写入有效的 entry
-			for _, entry := range validEntries {
-				writeOff := mergeDBFile.Offset
-				err := mergeDBFile.Write(entry)
-				if err != nil {
-					return err
-				}
-
-				// 更新索引
-				db.indexes[string(entry.Key)] = writeOff
-			}
-
-			// 获取文件名
-			dbFileName := db.dbFile.File.Name()
-			// 关闭文件
-			db.dbFile.File.Close()
-			// 删除旧的数据文件
-			os.Remove(dbFileName)
-
-			// 获取文件名
-			mergeDBFileName := mergeDBFile.File.Name()
-			// 关闭文件
-			mergeDBFile.File.Close()
-			// 临时文件变更为新的数据文件
-			os.Rename(mergeDBFileName, db.dirPath+string(os.PathSeparator)+FileName)
-
-			db.dbFile = mergeDBFile
+			// 更新索引
+			db.indexes[string(entry.Key)] = writeOff
 		}
+
+		// 获取文件名
+		dbFileName := db.dbFile.File.Name()
+		// 关闭文件
+		db.dbFile.File.Close()
+		// 删除旧的数据文件
+		os.Remove(dbFileName)
+
+		// 获取文件名
+		mergeDBFileName := mergeDBFile.File.Name()
+		// 关闭文件
+		mergeDBFile.File.Close()
+		// 临时文件变更为新的数据文件
+		os.Rename(mergeDBFileName, db.dirPath+string(os.PathSeparator)+FileName)
+
+		db.dbFile = mergeDBFile
 	}
 
 	return nil
+}
+
+// Put 写入数据
+func (db *MiniDB) Put(key []byte, value []byte) (err error) {
+	if len(key) == 0 {
+		return
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	offset := db.dbFile.Offset
+	entry := NewEntry(key, value, PUT)
+	err = db.dbFile.Write(entry)
+
+	db.indexes[string(key)] = offset
+	return
+}
+
+// Get 取出数据
+func (db *MiniDB) Get(key []byte) (val []byte, err error) {
+	if len(key) == 0 {
+		return
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	offset, ok := db.indexes[string(key)]
+	if !ok {
+		return
+	}
+
+	// 从磁盘中读取数据
+	var e *Entry
+	e, err = db.dbFile.Read(offset)
+	if err != nil && err != io.EOF {
+		return
+	}
+	if e != nil {
+		val = e.Value
+	}
+	return
+}
+
+func (db *MiniDB) Del(key []byte) (err error) {
+	if len(key) == 0 {
+		return
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	_, ok := db.indexes[string(key)]
+	if !ok {
+		return
+	}
+
+	e := NewEntry(key, nil, DEL)
+	err = db.dbFile.Write(e)
+	if err != nil {
+		return
+	}
+
+	delete(db.indexes, string(key))
+	return
 }
